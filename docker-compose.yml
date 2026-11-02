@@ -1,0 +1,132 @@
+name: nyc-taxi-pipeline
+
+services:
+
+  # -------------------------
+  # PostgreSQL
+  # -------------------------
+  postgres:
+    image: postgres:16
+    container_name: nyc-taxi-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: airflow
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # -------------------------
+  # MinIO Object Storage
+  # -------------------------
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    container_name: nyc-taxi-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+
+  # -------------------------
+  # Spark Master
+  # -------------------------
+  spark-master:
+    image: apache/spark:latest
+    container_name: nyc-taxi-spark-master
+    command:
+      - /opt/spark/bin/spark-class
+      - org.apache.spark.deploy.master.Master
+    environment:
+     SPARK_MASTER_HOST: spark-master
+     MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+
+     WAREHOUSE_HOST: postgres
+     WAREHOUSE_PORT: 5432
+     WAREHOUSE_DB: taxi_warehouse
+     WAREHOUSE_USER: airflow
+     WAREHOUSE_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "7077:7077"
+      - "8081:8080"
+    volumes:
+    - ./spark/jobs:/opt/spark-jobs:ro  
+    - spark_ivy_cache:/opt/spark-ivy
+    restart: unless-stopped
+
+  # -------------------------
+  # Spark Worker
+  # -------------------------
+  spark-worker:
+    image: apache/spark:latest
+    container_name: nyc-taxi-spark-worker
+    command:
+      - /opt/spark/bin/spark-class
+      - org.apache.spark.deploy.worker.Worker
+      - spark://spark-master:7077
+    environment:
+      SPARK_WORKER_MEMORY: 3G
+      SPARK_WORKER_CORES: 2
+      SPARK_MASTER_HOST: spark-master
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    depends_on:
+      - spark-master
+    ports:
+      - "8082:8081"
+    volumes:
+    - ./spark/jobs:/opt/spark-jobs:ro  
+    restart: unless-stopped
+
+  # -------------------------
+  # Airflow
+  # -------------------------
+  airflow:
+    build:
+      context: .
+      dockerfile: airflow/Dockerfile
+    image: nyc-taxi-airflow:3.3.2
+    container_name: nyc-taxi-airflow
+    command: standalone
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${POSTGRES_PASSWORD}@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      SPARK_HOME: /opt/spark
+      JAVA_HOME: /opt/java/openjdk
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./spark/jobs:/opt/spark-jobs:ro
+      - spark_ivy_cache:/opt/spark-ivy
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  postgres_data:
+  minio_data: 
+  spark_ivy_cache:   
+
+  

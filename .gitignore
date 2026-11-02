@@ -1,0 +1,36 @@
+cd ~/vsc/NYC_Taxi_Pipeline
+
+cat > .gitignore <<'EOF'
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Airflow
+airflow/logs/
+
+# Data and storage
+data/
+minio-data/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+EOF*.swp
