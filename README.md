@@ -11,8 +11,6 @@ The pipeline downloads official NYC Yellow Taxi trip records and taxi zone refer
 Apache Airflow orchestrates the pipeline through a parent DAG and modular child DAGs, while a separate Streamlit application provides interactive business analytics.
 
 ## Architecture
-## Pipeline Architecture
-
 ![NYC Taxi Pipeline Architecture](docs/architecture.png)
 ```mermaid
 flowchart TD
